@@ -325,8 +325,8 @@ const startSimulation = () => {
     确保已在 index.html 引入这些 Google Fonts 
   */
   --font-mono: 'JetBrains Mono', monospace;
-  --font-sans: 'Space Grotesk', 'Noto Sans SC', system-ui, sans-serif;
-  --font-cn: 'Noto Sans SC', system-ui, sans-serif;
+  --font-sans: 'Space Grotesk', 'Noto Sans KR', 'Noto Sans SC', system-ui, sans-serif;
+  --font-kr: 'Noto Sans KR', 'Noto Sans SC', system-ui, sans-serif;
 }
 
 .home-container {

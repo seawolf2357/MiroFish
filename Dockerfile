@@ -1,29 +1,69 @@
-FROM python:3.11
+# ============================================================
+# MiroFish - Hugging Face Space Docker Image (Optimized)
+# ============================================================
+# Multi-stage build: frontend build → production runtime
+# ============================================================
 
-# 安装 Node.js （满足 >=18）及必要工具
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends nodejs npm \
-  && rm -rf /var/lib/apt/lists/*
-
-# 从 uv 官方镜像复制 uv
-COPY --from=ghcr.io/astral-sh/uv:0.9.26 /uv /uvx /bin/
+# --- Stage 1: Build frontend ---
+FROM node:18-slim AS frontend-builder
 
 WORKDIR /app
 
-# 先复制依赖描述文件以利用缓存
-COPY package.json package-lock.json ./
+# Copy frontend dependency files
 COPY frontend/package.json frontend/package-lock.json ./frontend/
+
+# Install frontend dependencies
+RUN cd frontend && npm ci --prefer-offline
+
+# Copy frontend source + locales (needed for i18n build)
+COPY frontend/ ./frontend/
+COPY locales/ ./locales/
+
+# Build Vue app to /app/frontend/dist
+RUN cd frontend && npm run build
+
+# --- Stage 2: Production runtime ---
+FROM python:3.11-slim
+
+# Install system dependencies
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+     build-essential \
+     curl \
+  && rm -rf /var/lib/apt/lists/*
+
+# Copy uv package manager
+COPY --from=ghcr.io/astral-sh/uv:0.9.26 /uv /uvx /bin/
+
+# Create non-root user for HF Space security
+RUN useradd -m -u 1000 user
+WORKDIR /app
+
+# Copy Python dependency files and install
 COPY backend/pyproject.toml backend/uv.lock ./backend/
+RUN cd backend && uv sync --frozen --no-dev
 
-# 安装依赖（Node + Python）
-RUN npm ci \
-  && npm ci --prefix frontend \
-  && cd backend && uv sync --frozen
+# Copy backend source
+COPY backend/ ./backend/
 
-# 复制项目源码
-COPY . .
+# Copy built frontend from stage 1
+COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
-EXPOSE 3000 5001
+# Copy locales for backend i18n
+COPY locales/ ./locales/
 
-# 同时启动前后端（开发模式）
-CMD ["npm", "run", "dev"]
+# Create uploads directory with correct permissions
+RUN mkdir -p /app/backend/uploads && chown -R user:user /app
+
+# Switch to non-root user
+USER user
+
+# HF Space expects port 7860
+ENV FLASK_HOST=0.0.0.0
+ENV FLASK_PORT=7860
+ENV FLASK_DEBUG=False
+
+EXPOSE 7860
+
+# Start Flask in production mode (serves both API + frontend static files)
+CMD ["sh", "-c", "cd /app/backend && uv run python run.py"]

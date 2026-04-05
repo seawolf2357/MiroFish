@@ -1,3 +1,15 @@
+---
+title: MiroFish Prediction
+emoji: 🐟
+colorFrom: blue
+colorTo: cyan
+sdk: docker
+app_port: 7860
+pinned: true
+license: agpl-3.0
+short_description: AI Prediction Engine powered by Multi-Agent Simulation
+---
+
 <div align="center">
 
 <img src="./static/image/MiroFish_logo_compressed.jpeg" alt="MiroFish Logo" width="75%"/>
@@ -151,9 +163,12 @@ npm run setup:backend
 npm run dev
 ```
 
-**Service URLs:**
+**Service URLs (dev mode):**
 - Frontend: `http://localhost:3000`
 - Backend API: `http://localhost:5001`
+
+**Production mode (single port):**
+- `http://localhost:7860` (frontend + backend unified)
 
 **Start Individually:**
 
@@ -172,7 +187,7 @@ cp .env.example .env
 docker compose up -d
 ```
 
-Reads `.env` from root directory by default, maps ports `3000 (frontend) / 5001 (backend)`
+Access at `http://localhost:7860`. Reads `.env` from root directory by default.
 
 > Mirror address for faster pulling is provided as comments in `docker-compose.yml`, replace if needed.
 

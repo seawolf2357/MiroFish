@@ -9,7 +9,7 @@ import warnings
 # 需要在所有其他导入之前设置
 warnings.filterwarnings("ignore", message=".*resource_tracker.*")
 
-from flask import Flask, request
+from flask import Flask, request, send_from_directory
 from flask_cors import CORS
 
 from .config import Config
@@ -18,7 +18,12 @@ from .utils.logger import setup_logger, get_logger
 
 def create_app(config_class=Config):
     """Flask应用工厂函数"""
-    app = Flask(__name__)
+    # 判断是否存在前端构建产物
+    static_folder = os.path.join(os.path.dirname(__file__), '../../frontend/dist')
+    if os.path.isdir(static_folder):
+        app = Flask(__name__, static_folder=static_folder, static_url_path='')
+    else:
+        app = Flask(__name__)
     app.config.from_object(config_class)
     
     # 设置JSON编码：确保中文直接显示（而不是 \uXXXX 格式）
@@ -72,9 +77,26 @@ def create_app(config_class=Config):
     @app.route('/health')
     def health():
         return {'status': 'ok', 'service': 'MiroFish Backend'}
-    
+
+    # 前端静态文件服务（生产模式）
+    if app.static_folder and os.path.isdir(app.static_folder):
+        @app.route('/')
+        def serve_index():
+            return send_from_directory(app.static_folder, 'index.html')
+
+        @app.route('/<path:path>')
+        def serve_static(path):
+            """非API路由一律返回前端页面（支持Vue Router的history模式）"""
+            file_path = os.path.join(app.static_folder, path)
+            if os.path.isfile(file_path):
+                return send_from_directory(app.static_folder, path)
+            return send_from_directory(app.static_folder, 'index.html')
+
+        if should_log_startup:
+            logger.info(f"前端静态文件服务已启用: {app.static_folder}")
+
     if should_log_startup:
         logger.info("MiroFish Backend 启动完成")
-    
+
     return app
 

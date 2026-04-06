@@ -1,15 +1,15 @@
 {
   "ko": {
     "label": "한국어",
-    "llmInstruction": "한국어로 답변해주세요."
+    "llmInstruction": "CRITICAL LANGUAGE REQUIREMENT: You MUST write ALL content entirely in Korean (한국어). Every sentence, every quote, every citation, every blockquote must be in Korean. Translate any non-Korean content to Korean before including it. Do NOT use any other language in your output."
   },
   "zh": {
     "label": "中文",
-    "llmInstruction": "请使用中文回答。"
+    "llmInstruction": "CRITICAL LANGUAGE REQUIREMENT: You MUST write ALL content entirely in Chinese (中文). Every sentence, every quote, every citation must be in Chinese. Translate any non-Chinese content to Chinese before including it."
   },
   "en": {
     "label": "English",
-    "llmInstruction": "Please respond in English."
+    "llmInstruction": "CRITICAL LANGUAGE REQUIREMENT: You MUST write ALL content entirely in English. Every sentence, every quote, every citation must be in English. Translate any non-English content to English before including it."
   },
   "es": {
     "label": "Español",

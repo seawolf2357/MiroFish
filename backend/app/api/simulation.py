@@ -2327,23 +2327,22 @@ def interview_agent():
                 "error": t('api.invalidInterviewPlatform')
             }), 400
         
-        # 检查环境状态
-        if not SimulationRunner.check_env_alive(simulation_id):
-            return jsonify({
-                "success": False,
-                "error": t('api.envNotRunning')
-            }), 400
-        
-        # 优化prompt，添加前缀避免Agent调用工具
-        optimized_prompt = optimize_interview_prompt(prompt)
-        
-        result = SimulationRunner.interview_agent(
-            simulation_id=simulation_id,
-            agent_id=agent_id,
-            prompt=optimized_prompt,
-            platform=platform,
-            timeout=timeout
-        )
+        # 检查环境状态 - 如果 OASIS 환경不可用，使用 LLM 回退
+        use_llm_fallback = not SimulationRunner.check_env_alive(simulation_id)
+
+        if use_llm_fallback:
+            result = _llm_interview_fallback(simulation_id, [{"agent_id": agent_id, "prompt": prompt}])
+        else:
+            # 优化prompt，添加前缀避免Agent调用工具
+            optimized_prompt = optimize_interview_prompt(prompt)
+
+            result = SimulationRunner.interview_agent(
+                simulation_id=simulation_id,
+                agent_id=agent_id,
+                prompt=optimized_prompt,
+                platform=platform,
+                timeout=timeout
+            )
 
         return jsonify({
             "success": result.get("success", False),
@@ -2569,22 +2568,31 @@ def interview_all_agents():
                 "error": t('api.invalidInterviewPlatform')
             }), 400
 
-        # 检查环境状态
-        if not SimulationRunner.check_env_alive(simulation_id):
-            return jsonify({
-                "success": False,
-                "error": t('api.envNotRunning')
-            }), 400
+        # 检查环境状态 - 如果 OASIS 环境不可用，使用 LLM 回退
+        use_llm_fallback = not SimulationRunner.check_env_alive(simulation_id)
 
-        # 优化prompt，添加前缀避免Agent调用工具
-        optimized_prompt = optimize_interview_prompt(prompt)
+        if use_llm_fallback:
+            # Load profiles to determine agent count
+            import json as _json
+            sim_dir = os.path.join(Config.OASIS_SIMULATION_DATA_DIR, simulation_id)
+            profiles_file = os.path.join(sim_dir, "reddit_profiles.json")
+            profiles = []
+            if os.path.exists(profiles_file):
+                with open(profiles_file, 'r', encoding='utf-8') as f:
+                    profiles = _json.load(f)
 
-        result = SimulationRunner.interview_all_agents(
-            simulation_id=simulation_id,
-            prompt=optimized_prompt,
-            platform=platform,
-            timeout=timeout
-        )
+            interviews = [{"agent_id": i, "prompt": prompt} for i in range(len(profiles))]
+            result = _llm_interview_fallback(simulation_id, interviews)
+        else:
+            # 优化prompt，添加前缀避免Agent调用工具
+            optimized_prompt = optimize_interview_prompt(prompt)
+
+            result = SimulationRunner.interview_all_agents(
+                simulation_id=simulation_id,
+                prompt=optimized_prompt,
+                platform=platform,
+                timeout=timeout
+            )
 
         return jsonify({
             "success": result.get("success", False),

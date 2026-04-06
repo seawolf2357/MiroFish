@@ -43,6 +43,109 @@ def optimize_interview_prompt(prompt: str) -> str:
     return f"{INTERVIEW_PROMPT_PREFIX}{prompt}"
 
 
+def _llm_interview_fallback(simulation_id: str, interviews: list) -> dict:
+    """
+    LLM-based fallback for agent interviews when OASIS environment is not alive.
+    Uses agent profile data to simulate responses via the LLM API.
+    """
+    import json
+    from ..utils.llm_client import LLMClient
+    from ..utils.locale import get_language_instruction
+
+    sim_dir = os.path.join(Config.OASIS_SIMULATION_DATA_DIR, simulation_id)
+    profiles_file = os.path.join(sim_dir, "reddit_profiles.json")
+
+    # Load agent profiles
+    profiles = []
+    if os.path.exists(profiles_file):
+        with open(profiles_file, 'r', encoding='utf-8') as f:
+            profiles = json.load(f)
+
+    try:
+        llm = LLMClient()
+    except ValueError:
+        return {"success": False, "error": "LLM_API_KEY not configured"}
+
+    lang_instruction = get_language_instruction()
+    results = {}
+
+    for interview in interviews:
+        agent_id = interview.get('agent_id', 0)
+        prompt = interview.get('prompt', '')
+
+        # Find the agent's profile
+        profile = None
+        if isinstance(agent_id, int) and 0 <= agent_id < len(profiles):
+            profile = profiles[agent_id]
+        elif isinstance(agent_id, str):
+            for i, p in enumerate(profiles):
+                if str(i) == agent_id or p.get('username') == agent_id:
+                    profile = p
+                    break
+
+        if not profile:
+            results[f"reddit_{agent_id}"] = {
+                "agent_id": agent_id,
+                "response": "Agent profile not found.",
+                "success": False
+            }
+            continue
+
+        # Build persona context from profile
+        persona = profile.get('persona', '')
+        bio = profile.get('bio', '')
+        username = profile.get('username', f'Agent_{agent_id}')
+        name = profile.get('name', username)
+        profession = profile.get('profession', '')
+
+        system_prompt = f"""{lang_instruction}
+
+You are role-playing as a simulated individual in a prediction simulation.
+
+Your identity:
+- Name: {name}
+- Username: {username}
+- Profession: {profession}
+- Bio: {bio}
+
+Your detailed persona and background:
+{persona}
+
+Rules:
+- Stay completely in character as this person
+- Answer based on your persona, background, and beliefs
+- Be natural and conversational
+- Express opinions consistent with your character's personality and experiences"""
+
+        try:
+            response = llm.chat(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.7,
+                max_tokens=1024
+            )
+            results[f"reddit_{agent_id}"] = {
+                "agent_id": agent_id,
+                "response": response,
+                "success": True
+            }
+        except Exception as e:
+            logger.error(f"LLM interview fallback failed for agent {agent_id}: {e}")
+            results[f"reddit_{agent_id}"] = {
+                "agent_id": agent_id,
+                "response": f"Interview failed: {str(e)}",
+                "success": False
+            }
+
+    return {
+        "success": any(r.get("success") for r in results.values()),
+        "results": results,
+        "fallback": True
+    }
+
+
 # ============== 实体读取接口 ==============
 
 @simulation_bp.route('/entities/<graph_id>', methods=['GET'])
@@ -2359,26 +2462,26 @@ def interview_agents_batch():
                     "error": t('api.interviewListInvalidPlatform', index=i+1)
                 }), 400
 
-        # 检查环境状态
-        if not SimulationRunner.check_env_alive(simulation_id):
-            return jsonify({
-                "success": False,
-                "error": t('api.envNotRunning')
-            }), 400
+        # 检查环境状态 - 如果 OASIS 环境不可用，使用 LLM 回退
+        use_llm_fallback = not SimulationRunner.check_env_alive(simulation_id)
 
-        # 优化每个采访项的prompt，添加前缀避免Agent调用工具
-        optimized_interviews = []
-        for interview in interviews:
-            optimized_interview = interview.copy()
-            optimized_interview['prompt'] = optimize_interview_prompt(interview.get('prompt', ''))
-            optimized_interviews.append(optimized_interview)
+        if use_llm_fallback:
+            # LLM-based fallback: use agent profiles to generate responses
+            result = _llm_interview_fallback(simulation_id, interviews)
+        else:
+            # 优化每个采访项的prompt，添加前缀避免Agent调用工具
+            optimized_interviews = []
+            for interview in interviews:
+                optimized_interview = interview.copy()
+                optimized_interview['prompt'] = optimize_interview_prompt(interview.get('prompt', ''))
+                optimized_interviews.append(optimized_interview)
 
-        result = SimulationRunner.interview_agents_batch(
-            simulation_id=simulation_id,
-            interviews=optimized_interviews,
-            platform=platform,
-            timeout=timeout
-        )
+            result = SimulationRunner.interview_agents_batch(
+                simulation_id=simulation_id,
+                interviews=optimized_interviews,
+                platform=platform,
+                timeout=timeout
+            )
 
         return jsonify({
             "success": result.get("success", False),
